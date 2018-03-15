@@ -1,8 +1,8 @@
-package freechips.rocketchip.devices.debug
+package uncore.devices
 
 import Chisel._
 
-// This file was auto-generated from the repository at https://github.com/riscv/riscv-debug-spec.git,
+// This file was auto-generated from the repository at https://github.com/sifive/riscv-debug-spec.git,
 // 'make chisel'
 
 object DMI_RegAddrs {
@@ -24,6 +24,13 @@ object DMI_RegAddrs {
 
   /* This register controls the overall debug module
         as well as the currently selected harts, as defined in \Fhasel.
+
+        {\tt HARTSELLEN} (the size of \Fhartsel) is chosen by an
+        implementation depending on its needs.  It must be at least 0 and at
+        most 10. The maximum number of harts a DM can control is $2^{\tt
+        HARTSELLEN}$. A debugger should discover {\tt HARTSELLEN} by writing
+        all ones to \Fhartsel (assuming the maximum size) and reading back the
+        value to see which bits were actually set.
   */
   def DMI_DMCONTROL =  0x10
 
@@ -45,7 +52,7 @@ object DMI_RegAddrs {
         Each bit contains the logical OR of 32 halt bits. When there are a
         large number of harts in the system, the debugger can first read this
         register, and then read from the halt region (0x40--0x5f) to determine
-        which hart is the one that is halted.
+        which harts are halted.
   */
   def DMI_HALTSUM =  0x13
 
@@ -116,11 +123,14 @@ object DMI_RegAddrs {
 
   def DMI_DEVTREEADDR3 =  0x1c
 
-  /* Basic read/write registers that may be read or changed by abstract
-        commands.
+  /* \Rdatazero through \Rdataeleven are basic read/write registers that may
+        be read or changed by abstract commands. \Fdatacount indicates how many
+        of them are implemented, starting at \Rsbdatazero, counting up.
+        Table~\ref{tab:datareg} shows how abstract commands use these
+        registers.
 
-        Accessing them while an abstract command is executing causes \Fcmderr
-        to be set.
+        Accessing these registers while an abstract command is executing causes
+        \Fcmderr to be set.
 
         Attempts to write them while \Fbusy is set does not change their value.
 
@@ -133,11 +143,12 @@ object DMI_RegAddrs {
 
   def DMI_DATA11 =  0x0f
 
-  /* The {\tt progbuf} registers provide read/write access to the optional
-        program buffer.
+  /* \Rprogbufzero through \Rprogbuffifteen provide read/write access to the
+        optional program buffer. \Fprogbufsize indicates how many of them are
+        implemented starting at \Rprogbufzero, counting up.
 
-        Accessing them while an abstract command is executing causes \Fcmderr
-        to be set.
+        Accessing these registers while an abstract command is executing causes
+        \Fcmderr to be set.
 
         Attempts to write them while \Fbusy is set does not change their value.
   */
@@ -154,50 +165,69 @@ object DMI_RegAddrs {
   */
   def DMI_AUTHDATA =  0x30
 
+  /* If \Fsbasize is less than 97, then this register is not present.
+
+        When the system bus master is busy, writes to this register will set
+        \Fsbbusyerror and don't do anything else.
+  */
+  def DMI_SBADDRESS3 =  0x37
+
   def DMI_SBCS =  0x38
 
   /* If \Fsbasize is 0, then this register is not present.
 
-        When the system bus master is busy,
-        writes to this register will set \Fsberror.
+        When the system bus master is busy, writes to this register will set
+        \Fsbbusyerror and don't do anything else.
 
-        If \Fsberror is 0 and \Fsbautoread is set then the system bus
-        master will start
-        to read after updating the address from \Faddress. The access size is
-        controlled by \Fsbaccess in \Rsbcs.
-
-        If \Fsbsingleread is set, the bit is cleared.
+        \begin{steps}{If \Fsberror is 0, \Fsbbusyerror is 0, and \Fsbreadonaddr
+        is set then writes to this register start the following:}
+            \item Set \Fsbbusy.
+            \item Perform a bus read from the new value of {\tt sbaddress}.
+            \item If the read succeeded and \Fsbautoincrement is set, increment
+            {\tt sbaddress}.
+            \item Clear \Fsbbusy.
+        \end{steps}
   */
   def DMI_SBADDRESS0 =  0x39
 
+  /* If \Fsbasize is less than 33, then this register is not present.
+
+        When the system bus master is busy, writes to this register will set
+        \Fsbbusyerror and don't do anything else.
+  */
   def DMI_SBADDRESS1 =  0x3a
 
   /* If \Fsbasize is less than 65, then this register is not present.
+
+        When the system bus master is busy, writes to this register will set
+        \Fsbbusyerror and don't do anything else.
   */
   def DMI_SBADDRESS2 =  0x3b
 
   /* If all of the {\tt sbaccess} bits in \Rsbcs are 0, then this register
         is not present.
 
-        Any successful system bus read updates the data in this register, and
-        marks it no longer stale.
+        Any successful system bus read updates the data in this register.
 
-        If \Fsberror isn't 0 then accesses do nothing.
-        
-        \begin{steps}{Writes to this register:}
-            \item If the bus master is busy then accesses set \Fsberror, and
-            don't do anything else.
-            \item Start a bus write of {\tt sbdata} to {\tt sbaddress}.
-            \item If \Fsbautoincrement is set, increment {\tt sbaddress}.
+        If \Fsberror or \Fsbbusyerror both aren't 0 then accesses do nothing.
+
+        If the bus master is busy then accesses set \Fsbbusyerror, and don't do
+        anything else.
+
+        \begin{steps}{Writes to this register start the following:}
+            \item Set \Fsbbusy.
+            \item Perform a bus write of the new value of {\tt sbdata} to {\tt sbaddress}.
+            \item If the write succeeded and \Fsbautoincrement is set,
+            increment {\tt sbaddress}.
+            \item Clear \Fsbbusy.
         \end{steps}
 
-        \begin{steps}{Reads from this register:}
-            \item If the register is marked stale, then set \Fsberror and don't
-            do anything else.
+        \begin{steps}{Reads from this register start the following:}
             \item ``Return'' the data.
-            \item Mark the register stale.
+            \item Set \Fsbbusy.
             \item If \Fsbautoincrement is set, increment {\tt sbaddress}.
-            \item If \Fsbautoread is set, start another system bus read.
+            \item If \Fsbreadondata is set, perform another system bus read.
+            \item Clear \Fsbbusy.
         \end{steps}
 
         Only \Rsbdatazero has this behavior. The other {\tt sbdata} registers
@@ -209,14 +239,23 @@ object DMI_RegAddrs {
 
   /* If \Fsbaccesssixtyfour and \Fsbaccessonetwentyeight are 0, then this
         register is not present.
+
+        If the bus master is busy then accesses set \Fsbbusyerror, and don't do
+        anything else.
   */
   def DMI_SBDATA1 =  0x3d
 
   /* This register only exists if \Fsbaccessonetwentyeight is 1.
+
+        If the bus master is busy then accesses set \Fsbbusyerror, and don't do
+        anything else.
   */
   def DMI_SBDATA2 =  0x3e
 
   /* This register only exists if \Fsbaccessonetwentyeight is 1.
+
+        If the bus master is busy then accesses set \Fsbbusyerror, and don't do
+        anything else.
   */
   def DMI_SBDATA3 =  0x3f
 
@@ -224,20 +263,7 @@ object DMI_RegAddrs {
 
 class DMSTATUSFields extends Bundle {
 
-  val reserved0 = UInt(5.W)
-
-  /* Gets set if the Debug Module was accessed incorrectly.
-
-            0 (none): No error.
-
-            1 (badaddr): There was an access to an unimplemented Debug Module
-            address.
-
-            7 (other): An access failed for another reason.
-  */
-  val dmerr = UInt(3.W)
-
-  val reserved1 = UInt(1.W)
+  val reserved0 = UInt(9.W)
 
   /* If 1, then there is an implicit {\tt ebreak} instruction at the
             non-existent word immediately after the Program Buffer. This saves
@@ -248,7 +274,7 @@ class DMSTATUSFields extends Bundle {
   */
   val impebreak = Bool()
 
-  val reserved2 = UInt(2.W)
+  val reserved1 = UInt(2.W)
 
   /* This field is 1 when all currently selected harts have been reset but the reset has not been acknowledged.
   */
@@ -317,7 +343,7 @@ class DMSTATUSFields extends Bundle {
   */
   val authbusy = Bool()
 
-  val reserved3 = UInt(1.W)
+  val reserved2 = UInt(1.W)
 
   /* 0: \Rdevtreeaddrzero--\Rdevtreeaddrthree hold information which
             is not relevant to the Device Tree.
@@ -402,7 +428,8 @@ class DMCONTROLFields extends Bundle {
   val hasel = Bool()
 
   /* The DM-specific index of the hart to select. This hart is always part of the
-            currently selected harts.
+            currently selected harts. Only the lower {\tt HARTSELLEN} bits are actually
+            implemented.
   */
   val hartsel = UInt(10.W)
 
@@ -468,6 +495,9 @@ class HARTINFOFields extends Bundle {
 
             If \Fdataaccess is 1: Number of 32-bit words in the memory map
             dedicated to shadowing the {\tt data} registers.
+
+            Since there are at most 12 {\tt data} registers, the value in this
+            register must be 12 or smaller.
   */
   val datasize = UInt(4.W)
 
@@ -606,12 +636,12 @@ class ABSTRACTCSFields extends Bundle {
   */
   val cmderr = UInt(3.W)
 
-  val reserved3 = UInt(3.W)
+  val reserved3 = UInt(4.W)
 
   /* Number of {\tt data} registers that are implemented as part of the
             abstract command interface. Valid sizes are 0 - 12.
   */
-  val datacount = UInt(5.W)
+  val datacount = UInt(4.W)
 
 }
 
@@ -631,14 +661,14 @@ class COMMANDFields extends Bundle {
 
 class ABSTRACTAUTOFields extends Bundle {
 
-  /* When a bit in this field is 1, read or write accesses the corresponding {\tt progbuf} word
+  /* When a bit in this field is 1, read or write accesses to the corresponding {\tt progbuf} word
           cause the command in \Rcommand to be executed again.
   */
   val autoexecprogbuf = UInt(16.W)
 
   val reserved0 = UInt(4.W)
 
-  /* When a bit in this field is 1, read or write accesses the corresponding {\tt data} word
+  /* When a bit in this field is 1, read or write accesses to the corresponding {\tt data} word
           cause the command in \Rcommand to be executed again.
   */
   val autoexecdata = UInt(12.W)
@@ -669,17 +699,54 @@ class AUTHDATAFields extends Bundle {
 
 }
 
+class SBADDRESS3Fields extends Bundle {
+
+  /* Accesses bits 127:96 of the physical address in {\tt sbaddress} (if
+            the system address bus is that wide).
+  */
+  val address = UInt(32.W)
+
+}
+
 class SBCSFields extends Bundle {
 
-  val reserved0 = UInt(11.W)
+  /* 0: The System Bus interface conforms to mainline drafts of this
+            spec older than 1 January, 2018.
 
-  /* When a 1 is written here, triggers a read at the address in {\tt
-            sbaddress} using the access size set by \Fsbaccess.
+            1: The System Bus interface conforms to this version of the spec.
+
+            Other values are reserved for future versions.
   */
-  val sbsingleread = Bool()
+  val sbversion = UInt(3.W)
 
-  /* Select the access size to use for system bus accesses triggered by
-            writes to the {\tt sbaddress} registers or \Rsbdatazero.
+  val reserved0 = UInt(6.W)
+
+  /* Set when the debugger attempts to read data while a read is in
+            progress, or when the debugger initiates a new access while one is
+            already in progress (while \Fsbbusy is set). It remains set until
+            it's explicitly cleared by the debugger.
+
+            While this field is non-zero, no more system bus accesses can be
+            initiated by the debug module.
+  */
+  val sbbusyerror = Bool()
+
+  /* When 1, indicates the system bus master is busy. (Whether the
+            system bus itself is busy is related, but not the same thing.) This
+            bit goes high immediately when a read or write is requested for any
+            reason, and does not go low until the access is fully completed.
+
+            To avoid race conditions, debuggers must not try to clear \Fsberror
+            until they read \Fsbbusy as 0.
+  */
+  val sbbusy = Bool()
+
+  /* When 1, every write to \Rsbaddresszero automatically triggers a
+            system bus read at the new address.
+  */
+  val sbreadonaddr = Bool()
+
+  /* Select the access size to use for system bus accesses.
 
             0: 8-bit
 
@@ -691,8 +758,8 @@ class SBCSFields extends Bundle {
 
             4: 128-bit
 
-            If an unsupported system bus access size is written here, the DM
-            does not perform the access and sberror is set to 3.
+            If \Fsbaccess has an unsupported value when the DM starts a bus
+            access, the access is not performed and \Fsberror is set to 3.
   */
   val sbaccess = UInt(3.W)
 
@@ -704,7 +771,7 @@ class SBCSFields extends Bundle {
   /* When 1, every read from \Rsbdatazero automatically triggers a
             system bus read at the (possibly auto-incremented) address.
   */
-  val sbautoread = Bool()
+  val sbreadondata = Bool()
 
   /* When the debug module's system bus
             master causes a bus error, this field gets set. The bits in this
@@ -719,10 +786,6 @@ class SBCSFields extends Bundle {
             2: A bad address was accessed.
 
             3: There was some other error (eg. alignment).
-
-            4: The system bus master was busy when one of the
-            {\tt sbaddress} or {\tt sbdata} registers was written,
-            or \Rsbdatazero was read when it had stale data.
   */
   val sberror = UInt(3.W)
 
